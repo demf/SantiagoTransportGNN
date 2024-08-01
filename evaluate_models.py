@@ -119,13 +119,14 @@ def evaluate_model(model, x_test, y_test, max_speed, min_speed, is_stgcn=False, 
     
     y_true = y_test.cpu().numpy() if isinstance(y_test, torch.Tensor) else y_test
     
+    # Asegúrate de que y_true también esté reescalado
     y_true = rescale_data(y_true, max_speed, min_speed)
     y_pred = rescale_data(y_pred, max_speed, min_speed)
     
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
     
-    return y_pred, rmse, mae
+    return y_pred, y_true, rmse, mae  # Devuelve también y_true reescalado
 
 # Ciclo principal
 def main():
@@ -168,10 +169,10 @@ def main():
                 try:
                     if model_name == 'STGCN':
                         model = load_stgcn_model(model_path, device, num_nodes, channels, num_layers, kernel_size, K, n_his)
-                        y_pred, rmse, mae = evaluate_model(model, x_test, y_test, max_speed, min_speed, True, edge_index, edge_weight)
                     else:
                         model = load_lstm_model(model_path)
-                        y_pred, rmse, mae = evaluate_model(model, x_test, y_test, max_speed, min_speed)
+                    
+                    y_pred, y_true, rmse, mae = evaluate_model(model, x_test, y_test, max_speed, min_speed, is_stgcn=(model_name == 'STGCN'), edge_index=edge_index, edge_weight=edge_weight)
                     
                     print(f"RMSE: {rmse:.4f}")
                     print(f"MAE: {mae:.4f}")
@@ -179,7 +180,7 @@ def main():
                     # Imprimir algunas predicciones
                     print("\nAlgunas predicciones:")
                     for i in range(5):  # Imprimir 5 predicciones de ejemplo
-                        print(f"Real: {y_test[i, 0]:.2f}, Predicción: {y_pred[i, 0]:.2f}")
+                        print(f"Real: {y_true[i, 0]:.2f}, Predicción: {y_pred[i, 0]:.2f}")
                 
                 except Exception as e:
                     print(f"Error al evaluar el modelo {model_name}: {str(e)}")
