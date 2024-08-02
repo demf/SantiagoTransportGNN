@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tensorflow import keras
 import torch
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from torch_geometric_temporal.nn import STConv
@@ -106,7 +107,7 @@ def load_stgcn_model(model_path, device, num_nodes, channels, num_layers, kernel
 
 # Función para cargar modelo LSTM (TensorFlow)
 def load_lstm_model(model_path):
-    return tf.keras.models.load_model(model_path)
+    return keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
 
 # Función para hacer predicciones y calcular métricas
 def evaluate_model(model, x_test, y_test, max_speed, min_speed, is_stgcn=False, edge_index=None, edge_weight=None):
