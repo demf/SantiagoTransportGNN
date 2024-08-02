@@ -2,11 +2,12 @@ import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow import keras
 import torch
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from torch_geometric_temporal.nn import STConv
 import torch.nn as nn
+import scipy.sparse as sp
+import traceback
 
 # Configuración
 temps = [20]  # Solo 20 minutos
@@ -65,9 +66,10 @@ class TrafficModel(torch.nn.Module):
 
 # Función para cargar datos
 def load_data(temp, num_grid):
-    timeseries = pd.read_csv(f"datos/series_tiempo/RED_V_{num_grid}.csv", header=None, index_col=False).to_numpy()
-    adj_matrix = pd.read_csv(f"datos/matrices_adyacencia/RED_W_{num_grid}.csv", header=None, index_col=False).to_numpy()
-    timestamps = pd.read_csv(f"datos/timestamps/timestamps_{num_grid}.csv", header=None, index_col=False).squeeze()
+    data_path = '/content/drive/MyDrive/Tesis-2023/datos_MTT_santiago/timeseries_06_22_hours/'
+    timeseries = pd.read_csv(f"{data_path}{temp}min/RED_V_{num_grid}.csv", header=None, index_col=False).to_numpy()
+    adj_matrix = pd.read_csv(f"{data_path}abj_matrix/RED_W_{num_grid}.csv", header=None, index_col=False).to_numpy()
+    timestamps = pd.read_csv(f"{data_path}{temp}min/timestamps_{num_grid}.csv", header=None, index_col=False).squeeze()
     timestamps = pd.to_datetime(timestamps)
 
     min_len = min(len(timeseries), len(timestamps))
@@ -76,15 +78,12 @@ def load_data(temp, num_grid):
 
     return timeseries, adj_matrix, timestamps
 
-# Función para escalar datos
 def scale_data(data, max_speed, min_speed):
     return (data - min_speed) / (max_speed - min_speed)
 
-# Función para reescalar datos
 def rescale_data(data, max_speed, min_speed):
     return data * (max_speed - min_speed) + min_speed
 
-# Función para transformar datos
 def data_transform(data, n_his, n_pred, device):
     num_nodes = data.shape[1]
     num_obs = len(data) - n_his - n_pred
@@ -99,29 +98,29 @@ def data_transform(data, n_his, n_pred, device):
 
     return torch.Tensor(x).to(device), torch.Tensor(y).to(device)
 
-# Función para cargar modelo STGCN
 def load_stgcn_model(model_path, device, num_nodes, channels, num_layers, kernel_size, K, n_his):
     model = TrafficModel(device, num_nodes, channels, num_layers, kernel_size, K, n_his).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     return model
 
-# Función para cargar modelo LSTM (TensorFlow)
-def load_lstm_model(model_path):
-    return keras.layers.TFSMLayer(model_path, call_endpoint='serving_default')
+def load_tf_model(model_path):
+    return tf.keras.models.load_model(model_path)
 
-# Función para hacer predicciones y calcular métricas
 def evaluate_model(model, x_test, y_test, max_speed, min_speed, is_stgcn=False, edge_index=None, edge_weight=None):
     if is_stgcn:
         model.eval()
         with torch.no_grad():
             y_pred = model(x_test, edge_index, edge_weight).view(len(x_test), -1).cpu().numpy()
     else:
-        # Para el modelo LSTM cargado como TFSMLayer
-        y_pred = model(x_test.cpu().numpy()).numpy()
+        # Para modelos TensorFlow
+        if isinstance(x_test, torch.Tensor):
+            x_test = x_test.cpu().numpy()
+        if len(x_test.shape) == 4:
+            x_test = x_test.reshape(x_test.shape[0], x_test.shape[1], -1)
+        y_pred = model.predict(x_test)
     
     y_true = y_test.cpu().numpy() if isinstance(y_test, torch.Tensor) else y_test
     
-    # Asegúrate de que y_true también esté reescalado
     y_true = rescale_data(y_true, max_speed, min_speed)
     y_pred = rescale_data(y_pred, max_speed, min_speed)
     
@@ -130,16 +129,23 @@ def evaluate_model(model, x_test, y_test, max_speed, min_speed, is_stgcn=False, 
     
     return y_pred, y_true, rmse, mae
 
-# Ciclo principal
 def main():
+    temps = [20]
+    grids = [51, 65, 75]
+    n_his = 20  # Pasos temporales anteriores
+    n_pred = 1
+    channels = np.array([[1, 16, 64], [64, 16, 64]])
+    num_layers = 2
+    kernel_size = 3
+    K = 3
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
     for temp in temps:
         for grid in grids:
             print(f"\nProcesando: Temporalidad {temp}, Grilla {grid}")
             
-            # Cargar datos
             V, W, timestamps = load_data(temp, grid)
             
-            # Preparar datos
             num_samples, num_nodes = V.shape
             train_split = int(num_samples * 0.7)
             val_split = int(num_samples * 0.85)
@@ -154,16 +160,13 @@ def main():
             test_scaled = scale_data(test, max_speed, min_speed)
             x_test, y_test = data_transform(test_scaled, n_his, n_pred, device)
             
-            # Preparar grafo para STGCN
-            import scipy.sparse as sp
             G = sp.coo_matrix(W)
             edge_index = torch.tensor(np.array([G.row, G.col]), dtype=torch.int64).to(device)
             edge_weight = torch.tensor(G.data).float().to(device)
             
-            # Cargar y evaluar modelos
             models = {
-                'STGCN': f'modelos/{grid}_STGCN/model.pt',
-                'LSTM': f'modelos/{grid}_lstm_8_{temp}_t'
+                'LSTM': f'modelos/{grid}_lstm_8_20_t',
+                'STGCN': f'modelos/{grid}_STGCN/model.pt'
             }
             
             for model_name, model_path in models.items():
@@ -172,20 +175,20 @@ def main():
                     if model_name == 'STGCN':
                         model = load_stgcn_model(model_path, device, num_nodes, channels, num_layers, kernel_size, K, n_his)
                     else:
-                        model = load_lstm_model(model_path)
+                        model = load_tf_model(model_path)
                     
                     y_pred, y_true, rmse, mae = evaluate_model(model, x_test, y_test, max_speed, min_speed, is_stgcn=(model_name == 'STGCN'), edge_index=edge_index, edge_weight=edge_weight)
                     
                     print(f"RMSE: {rmse:.4f}")
                     print(f"MAE: {mae:.4f}")
                     
-                    # Imprimir algunas predicciones
                     print("\nAlgunas predicciones:")
-                    for i in range(5):  # Imprimir 5 predicciones de ejemplo
+                    for i in range(5):
                         print(f"Real: {y_true[i, 0]:.2f}, Predicción: {y_pred[i, 0]:.2f}")
                 
                 except Exception as e:
                     print(f"Error al evaluar el modelo {model_name}: {str(e)}")
+                    traceback.print_exc()
 
     print("\nEvaluación completada.")
 
