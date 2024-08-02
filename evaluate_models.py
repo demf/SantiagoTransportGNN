@@ -116,7 +116,8 @@ def evaluate_model(model, x_test, y_test, max_speed, min_speed, is_stgcn=False, 
         with torch.no_grad():
             y_pred = model(x_test, edge_index, edge_weight).view(len(x_test), -1).cpu().numpy()
     else:
-        y_pred = model.predict(x_test.cpu().numpy())
+        # Para el modelo LSTM cargado como TFSMLayer
+        y_pred = model(x_test.cpu().numpy()).numpy()
     
     y_true = y_test.cpu().numpy() if isinstance(y_test, torch.Tensor) else y_test
     
@@ -127,7 +128,7 @@ def evaluate_model(model, x_test, y_test, max_speed, min_speed, is_stgcn=False, 
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
     
-    return y_pred, y_true, rmse, mae  # Devuelve también y_true reescalado
+    return y_pred, y_true, rmse, mae
 
 # Ciclo principal
 def main():
