@@ -2,7 +2,7 @@
 
 ## El codigo para ejecutar los siguientes modelos se encuentra en el siguiente [Notebook](https://colab.research.google.com/drive/15HhZmq9SWC1A4k82YQbpPcbXgMpWTcw2?usp=sharing)
 
-### Descripción de los Archivos
+## Descripción de los Archivos
 
 - `datos/temp/series_tiempo/`: Series temporales de velocidad para diferentes grillas (51, 65, 75 nodos).
 - `datos/temps/timestamps/`: Marcas de tiempo correspondientes a las series temporales.
