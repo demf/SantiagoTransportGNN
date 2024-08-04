@@ -5,7 +5,7 @@
 ## Descripción de los Archivos
 
 - `datos/temp/series_tiempo/`: Series temporales de velocidad para diferentes grillas (51, 65, 75 nodos).
-- `datos/temps/timestamps/`: Marcas de tiempo correspondientes a las series temporales.
+- `datos/temp/timestamps/`: Marcas de tiempo correspondientes a las series temporales.
 - `datos/matrices_adyacencia/`: Matrices que representan la conectividad entre nodos en cada grilla.
 - `modelos/`: Contiene los modelos entrenados STGCN y LSTM para cada configuración de grilla.
 
